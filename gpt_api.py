@@ -2,8 +2,6 @@ import os
 import requests
 import openai
 
-loaddotenv.load_dotenv()
-
 # Class GenerateTemplate for GPT-3 API
 class GenerationTemplate:
     """

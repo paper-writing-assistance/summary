@@ -35,7 +35,7 @@ class Config:
         """
         if mode not in _JSON:
             raise ValueError(f"Invalid mode: {mode}. Choose from {_JSON}")
-        return os.listdir(os.path.join(self.json_dir, mode))
+        return [os.path.join(self.json_dir, mode, filename) for filename in os.listdir(os.path.join(self.json_dir, mode))]
     
     def get_csv_files(self, file:str):
         """

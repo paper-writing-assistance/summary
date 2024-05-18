@@ -12,7 +12,7 @@ from transformers import pipeline
 from sentence_transformers import SentenceTransformer, util
 
 from utils import get_paragraph_ids, get_summarized_text
-from base import * 
+from base import _JSON, Config
 
 class SimSearch(Config):
     def __init__(self, json_dir: str = './json', csv_dir: str = './csv', mode: str = 'by_id', paper_id: Optional[str] = None):
@@ -271,7 +271,6 @@ class Search(SimSearch):
         self.strategy.execute(self)
         return self.save_csv()
 
-strategy = TextSearchStrategy()
-search = Search(strategy = strategy, mode='by_id', paper_id='6298b6a2-0f92-11ef-8230-426932df3dcf')
+strategy = ImgSearchStrategy()
+search = Search(strategy = strategy, mode='AI_VIT_O')
 result_dict = search.execute()
-breakpoint()

@@ -2,9 +2,9 @@ import os
 import json
 import pandas as pd
 from typing import Optional
+from collections import defaultdict
 
-from base import *
-
+from base import _JSON, Config
 class RuleSearch(Config):
     """
     A class for searching through rules based on specified criteria. It inherits from Config to use its configuration settings for file paths.
@@ -33,10 +33,12 @@ class RuleSearch(Config):
         self.figure_info = self.get_figure_info()  # Load figure information
         
         self.is_batch = mode != 'by_id'  # Determine if the search is in batch mode
+
         if self.is_batch:
             if mode not in _JSON:
                 raise ValueError(f"Invalid mode: {mode}. Choose from {_JSON}")
             self.json_file_paths = self.get_json_files(mode)
+
         else:
             if paper_id is None:
                 raise ValueError("Paper ID is required for 'by_id' mode.")
@@ -59,15 +61,27 @@ class RuleSearch(Config):
         Raises:
         - ValueError: If the caption text does not contain 'Figure' or 'Table'.
         """
-        if "Figure" in caption_text:
-            prefix = "Figure"
-        elif "Table" in caption_text:
-            prefix = "Table"
-        else:
-            raise ValueError("Caption text does not contain 'Figure' or 'Table'")
+        # make caption_text str
+        caption_text = str(caption_text)
+        try:
+            # If word 'Figure' or "Fig" is in caption_text, extract the number
+            if "Fig" in caption_text:
+                prefix = "Fig."
+            
+            if "Figure" in caption_text:
+                prefix = "Figure"
+                
+            elif "Table" in caption_text:
+                prefix = "Table"
+            else:
+                raise ValueError("Caption text does not contain 'Figure' or 'Table'")
+            
+            number_part = caption_text.split(prefix)[1].split(":")[0].split(".")[0].strip()
+            return f"{prefix} {number_part}"
         
-        number_part = caption_text.split(prefix)[1].split(":")[0].split(".")[0].strip()
-        return f"{prefix} {number_part}"
+        except ValueError as e:
+            print(e)
+            return None
 
     def __search_paragraph__(self, element, search_word):
         """
@@ -80,6 +94,8 @@ class RuleSearch(Config):
         Returns:
         - str or None: Returns the paragraph ID if the search_word is found within the paragraph text; otherwise, returns None.
         """
+        if search_word is None:
+            return None
         # Only proceed if element is a paragraph
         if element["category"] != "paragraph":
             return None
@@ -96,11 +112,11 @@ class RuleSearch(Config):
         Returns:
         - dict: A dictionary where each key is a paper ID and each value is another dictionary mapping figure numbers to the IDs of paragraphs referencing those figures.
         """
-        result_dict = {}
+        result_dict = defaultdict(lambda: defaultdict(tuple))
         # Iterate through each paper and its corresponding JSON file path
         for paper_id, json_file_path in zip(self.paper_ids, self.json_file_paths):
             # Get the caption texts for the current paper
-            img_element_idx = self.figure_info.loc[self.figure_info['id'] == paper_id, 'img_element_idx']
+            img_element_idx = self.figure_info.loc[self.figure_info['id'] == paper_id, 'img_element_idx'].reset_index(drop=True)
             caption_texts = self.figure_info.loc[self.figure_info['id'] == paper_id, 'caption']
             # Extract the figure numbers from the caption texts
             figure_numbers = [self.get_figure_number(caption) for caption in caption_texts]
@@ -112,6 +128,7 @@ class RuleSearch(Config):
                     json_data = json.load(f)
                 for element in json_data['elements']:
                     paragraph_id = self.__search_paragraph__(element, fig_num)
+                    
                     if paragraph_id:
                         paragraph_ids.append(paragraph_id)
                 
@@ -141,7 +158,7 @@ class RuleSearch(Config):
                 self.figure_info.loc[(self.figure_info['id'] == paper_id) & (self.figure_info['figure_number'] == fig_num), 'rule_based_paragraphs'] = paragraph_ids
 
         # Save the updated DataFrame to a CSV file
-        self.figure_info.to_csv(os.path.join(self.csv_dir, 'updated_figure_info.csv'), index=False)
+        self.figure_info.to_csv(os.path.join(self.csv_dir, 'figure_info.csv'), index=False)
 
     def execute(self):
         """
@@ -158,6 +175,7 @@ class RuleSearch(Config):
         return self.figure_info
     
 
-search = RuleSearch(mode='by_id', paper_id='6298b6a2-0f92-11ef-8230-426932df3dcf')
+search = RuleSearch(mode='AI_VIT_X')
 result_dict = search.execute()
-breakpoint()
+print(result_dict)
+# , paper_id='6298b6a2-0f92-11ef-8230-426932df3dcf'
