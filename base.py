@@ -1,15 +1,16 @@
 import os
+import json
 import pandas as pd
 
 # Constants for valid JSON and CSV file types
 _JSON = ['AI_VIT_O', 'AI_VIT_X', 'test']
-_CSV = ['figure_info.csv', 'metadata.csv']
+_CSV = ['figure_info_hand.csv', 'table_info_hand.csv', 'metadata.csv']
 
 class Config:
     """
     Configuration class for handling file paths and loading data from JSON and CSV files.
     """
-    def __init__(self, json_dir:str = './json', csv_dir:str='./csv'):
+    def __init__(self, json_dir:str = '../upstage/json', csv_dir:str='./upstage/csv'):
         """
         Initializes the configuration with directories for JSON and CSV files.
         
@@ -19,7 +20,21 @@ class Config:
         """
         self.json_dir = json_dir
         self.csv_dir = csv_dir
+    
+    def open_json(self, file:str):
+        """
+        Opens and loads a JSON file based on the specified file path.
         
+        Parameters:
+        - file (str): Path to the JSON file to open.
+        
+        Returns:
+        - Dictionary containing the JSON data.
+        """
+        with open(file, 'r') as f:
+            data = json.load(f)
+        return data
+    
     def get_json_files(self, mode:str):
         """
         Retrieves a list of JSON files based on the specified mode.
@@ -61,7 +76,7 @@ class Config:
         Returns:
         - DataFrame containing the data from figure_info.csv.
         """
-        figure_info = self.get_csv_files('figure_info.csv')
+        figure_info = self.get_csv_files('figure_info_hand.csv')
         df = pd.read_csv(figure_info)
         return df
     

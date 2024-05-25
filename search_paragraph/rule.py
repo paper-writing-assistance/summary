@@ -1,19 +1,25 @@
 import os
+import re
 import json
+import sys
 import pandas as pd
 from typing import Optional
 from collections import defaultdict
 
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+
 from base import _JSON, Config
+
 class RuleSearch(Config):
     """
     A class for searching through rules based on specified criteria. It inherits from Config to use its configuration settings for file paths.
     """
     def __init__(self, 
-                json_dir: str = './json', 
-                csv_dir: str = './csv',
+                json_dir: str = '../upstage/json', 
+                csv_dir: str = '../upstage/csv',
                 mode: str = 'by_id',
-                paper_id: Optional[str] = None):
+                paper_id: Optional[str] = None, 
+                is_figure: bool = True):
         """
         Initializes the RuleSearch object with directories for JSON and CSV, the mode of search, and optionally a specific paper ID.
         
@@ -31,6 +37,7 @@ class RuleSearch(Config):
         self.mode = mode
         self.metadata = self.get_metadata()  # Load metadata
         self.figure_info = self.get_figure_info()  # Load figure information
+        self.is_figure = is_figure  # Determine if the search is for figures or tables
         
         self.is_batch = mode != 'by_id'  # Determine if the search is in batch mode
 
@@ -50,39 +57,79 @@ class RuleSearch(Config):
 
     def get_figure_number(self, caption_text):
         """
-        Extracts and returns the figure or table number from the given caption text.
+        Extracts and returns the figure number from the given caption text.
         
         Parameters:
-        - caption_text (str): The caption text from which to extract the figure or table number.
+        - caption_text (str): The caption text from which to extract the figure number.
         
         Returns:
-        - str: The extracted figure or table number.
+        - str: The extracted figure number.
         
         Raises:
-        - ValueError: If the caption text does not contain 'Figure' or 'Table'.
+        - ValueError: If the caption text does not contain 'figure' or 'fig.'.
         """
-        # make caption_text str
-        caption_text = str(caption_text)
-        try:
-            # If word 'Figure' or "Fig" is in caption_text, extract the number
-            if "Fig" in caption_text:
-                prefix = "Fig."
-            
-            if "Figure" in caption_text:
-                prefix = "Figure"
-                
-            elif "Table" in caption_text:
-                prefix = "Table"
-            else:
-                raise ValueError("Caption text does not contain 'Figure' or 'Table'")
-            
-            number_part = caption_text.split(prefix)[1].split(":")[0].split(".")[0].strip()
-            return f"{prefix} {number_part}"
+        # Ensure caption_text is a string
+        caption_text = str(caption_text).lower()
         
-        except ValueError as e:
-            print(e)
-            return None
+        # Define regex pattern to match 'figure ' or 'fig. ' followed by the figure number
+        pattern = r'\b(figure|fig\.)\s*([^\s:.,]*)'
+        
+        # Search for the pattern in the caption text
+        match = re.search(pattern, caption_text)
+        
+        if not match:
+            raise ValueError("Caption text does not contain 'figure' or 'fig.'")
+        
+        # Extract the figure number
+        prefix = match.group(1)
+        figure_number = match.group(2)
+        
+        # Ensure the result always has "figure" as the prefix
+        return f"figure {figure_number}"
 
+    def get_table_number(self, caption_text):
+        """
+        Extracts and returns the table number from the given caption text.
+        
+        Parameters:
+        - caption_text (str): The caption text from which to extract the table number.
+        
+        Returns:
+        - str: The extracted table number.
+        
+        Raises:
+        - ValueError: If the caption text does not contain 'table'.
+        """
+        # Ensure caption_text is a string
+        caption_text = str(caption_text).lower()
+        
+        # Define regex pattern to match 'table ' followed by the table number
+        pattern = r'\b(table)\s*([^\s:.,]*[^\s]*)'
+        
+        # Search for the pattern in the caption text
+        match = re.search(pattern, caption_text)
+        
+        if not match:
+            raise ValueError("Caption text does not contain 'table'")
+        
+        # Extract the table number
+        prefix = match.group(1)
+        table_number = match.group(2)
+        
+        # Check for ':' and '.' within the first 5 characters
+        if ':' in table_number[:5] and '.' in table_number[:5]:
+            table_number = table_number.split(':')[0]
+        elif ':' in table_number[:5]:
+            table_number = table_number.split(':')[0]
+        elif '.' in table_number[:5]:
+            table_number = table_number.split('.')[0]
+        else:
+            table_number = table_number.split()[0]  # Handle cases without '.' or ':'
+        
+        # Ensure the result always has "table" as the prefix
+        return f"table {table_number}"
+
+    
     def __search_paragraph__(self, element, search_word):
         """
         Private method to search within a paragraph element for a specific search word.
@@ -100,7 +147,7 @@ class RuleSearch(Config):
         if element["category"] != "paragraph":
             return None
         # If the search word is found in the paragraph text, return its ID
-        if search_word in element['text']:
+        if search_word in element['text'].lower():
             return element['id']
         # If the search word is not found, return None
         return None
@@ -119,7 +166,7 @@ class RuleSearch(Config):
             img_element_idx = self.figure_info.loc[self.figure_info['id'] == paper_id, 'img_element_idx'].reset_index(drop=True)
             caption_texts = self.figure_info.loc[self.figure_info['id'] == paper_id, 'caption']
             # Extract the figure numbers from the caption texts
-            figure_numbers = [self.get_figure_number(caption) for caption in caption_texts]
+            figure_numbers = [self.get_table_number(caption) for caption in caption_texts]
             
             # Search for paragraphs referencing each figure number
             for idx, fig_num in enumerate(figure_numbers):
@@ -146,9 +193,11 @@ class RuleSearch(Config):
         Parameters:
         - result_dict (dict): A dictionary mapping paper IDs to dictionaries that map figure numbers to paragraph IDs.
         """
-        # Initialize the new column with None
-        self.figure_info['figure_number'] = None
-        self.figure_info['rule_based_paragraphs'] = None
+        # Check if the columns exist, if not, initialize them
+        if 'figure_number' not in self.figure_info.columns:
+            self.figure_info['figure_number'] = None
+        if 'rule_based_paragraphs' not in self.figure_info.columns:
+            self.figure_info['rule_based_paragraphs'] = None
 
         # Iterate through the results dictionary to update the DataFrame
         for paper_id, fig_nums_paragraphs in result_dict.items():
@@ -158,7 +207,7 @@ class RuleSearch(Config):
                 self.figure_info.loc[(self.figure_info['id'] == paper_id) & (self.figure_info['figure_number'] == fig_num), 'rule_based_paragraphs'] = paragraph_ids
 
         # Save the updated DataFrame to a CSV file
-        self.figure_info.to_csv(os.path.join(self.csv_dir, 'figure_info.csv'), index=False)
+        self.figure_info.to_csv(os.path.join(self.csv_dir, 'table_info_hand.csv'), index=False)
 
     def execute(self):
         """
@@ -174,8 +223,9 @@ class RuleSearch(Config):
         # Return the updated DataFrame
         return self.figure_info
     
-
 search = RuleSearch(mode='AI_VIT_X')
 result_dict = search.execute()
 print(result_dict)
 # , paper_id='6298b6a2-0f92-11ef-8230-426932df3dcf'
+
+breakpoint()

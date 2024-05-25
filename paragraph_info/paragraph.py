@@ -21,12 +21,12 @@ class ParagraphInfo(Config):
     A class for extracting information from paragraphs.
     """
     def __init__(self, 
-                json_dir: str = './upstage/json', 
-                csv_dir: str = './upstage/csv', 
+                json_dir: str = '../upstage/json', 
+                csv_dir: str = '../upstage/csv', 
                 mode: str = 'by_id', 
                 paper_id: Optional[str] = None, 
                 method: str = 'keyword',
-                save_dir: str = './summary/paragraph_info/output'):
+                save_dir: str = './paragraph_info/output'):
         """
         Initializes the ParagraphInfo object with directories for JSON and CSV files, the mode of search, a specific paper ID, and the search method.
         

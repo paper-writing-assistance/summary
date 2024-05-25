@@ -1,21 +1,26 @@
 from typing import Optional
 import json
 import os
-from PIL import Image 
+import sys
+from PIL import Image
+from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import torch
 import argparse
 
+
 from transformers import CLIPProcessor, CLIPModel
 from transformers import pipeline
 from sentence_transformers import SentenceTransformer, util
 
-from utils import get_paragraph_ids, get_summarized_text
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+
+from utils import get_paragraph_ids
 from base import _JSON, Config
 
 class SimSearch(Config):
-    def __init__(self, json_dir: str = './json', csv_dir: str = './csv', mode: str = 'by_id', paper_id: Optional[str] = None):
+    def __init__(self, json_dir: str = '../upstage/json', csv_dir: str = '../upstage/csv', mode: str = 'by_id', paper_id: Optional[str] = None, output_dir: str = './paragraph_info/output'):
         """
         Initializes the SimSearch object.
 
@@ -27,6 +32,7 @@ class SimSearch(Config):
         """
         super().__init__(json_dir, csv_dir)
         self.mode = mode
+        self.output_dir = output_dir
         self.is_batch = mode != 'by_id'
         self.metadata, self.figure_info = self.load_metadata_and_figures()
         self.paper_id, self.json_file_path = self.prepare_file_paths(mode, paper_id)
@@ -109,7 +115,7 @@ class SimSearch(Config):
             for idx in img_element_idxs:
                 self.similar_paragraphs[pid][idx] = []
                 
-    def get_summarized_texts_and_fig_info(self, paper_id, json_file):
+    def get_summarized_texts_and_fig_info(self, paper_id):
         """
         Retrieves summarized texts and figure information for a given paper ID and JSON file.
 
@@ -120,14 +126,29 @@ class SimSearch(Config):
         Returns:
         Tuple[Dict, Dict]: A tuple containing dictionaries for summarized texts and figure information.
         """  
-        with open(json_file) as f:
-            json_data = json.load(f)
-            
+        # get the paragraph_info/output/{paper_id}.csv file path
+        path = os.path.join(self.output_dir, f'{paper_id}.csv')
+        df = pd.read_csv(path)
+                    
         summarized_texts = {}
         fig_info = {}
         
         for img_element_idx, paragraph_ids in self.similar_paragraphs[paper_id].items():
-            summarized_texts[img_element_idx] = get_summarized_text(json_data, paragraph_ids)
+            paragraph_info = {}
+            for paragraph_id in paragraph_ids:
+                # if paragraph_id not in df['element_idx'], break and skip that paragraph
+                if paragraph_id not in df['element_idx'].values:
+                    continue
+                
+                paragraph_data = df[df['element_idx'] == paragraph_id]
+                
+                if paragraph_data.empty:
+                    raise ValueError("Paragraph info not found")
+                
+                paragraph_info[paragraph_id] = paragraph_data['summarized_text'].iloc[0]
+            
+            summarized_texts[img_element_idx] = paragraph_info
+            
             fig_info_data = self.figure_info[(self.figure_info['img_element_idx'] == img_element_idx) & (self.figure_info['id'] == paper_id)]
             if fig_info_data.empty:
                 raise ValueError("Figure info not found")
@@ -154,7 +175,7 @@ class SimSearch(Config):
         Returns:
         DataFrame: The figure information dataframe.
         """
-        csv_path = os.path.join(self.csv_dir, 'figure_info.csv')
+        csv_path = os.path.join(self.csv_dir, 'figure_info_hand.csv')
         self.figure_info.to_csv(csv_path, index=False)
         return self.figure_info
 
@@ -171,7 +192,7 @@ class SearchStrategy:
         raise NotImplementedError
 
 class TextSearchStrategy(SearchStrategy):
-    def execute(self, search: SimSearch):
+    def execute(self, search: SimSearch, method: str = 'summarized_text'):
         """
         Executes a text-based search strategy.
 
@@ -179,35 +200,53 @@ class TextSearchStrategy(SearchStrategy):
 
         Args:
         search (SimSearch): The SimSearch instance containing the data for execution.
+        method (str): The method used for similarity search.
         """
         # Initialize the sentence transformer model
         model = SentenceTransformer('ABrinkmann/sbert_xtremedistil-l6-h256-uncased-mean-cosine-h32')
         
+        # Define the column name based on the method
+        column_name = f'text_similarity_{method}_paragraph_id'
+        
         # Iterate through each paper and its corresponding JSON file
-        for pid, json_file in zip(search.paper_id, search.json_file_path):
-            summarized_texts, fig_info = search.get_summarized_texts_and_fig_info(pid, json_file)
-            
+        for paper_id, json_file in tqdm(zip(search.paper_id, search.json_file_path), total=len(search.paper_id)):
+            summarized_texts, fig_info = search.get_summarized_texts_and_fig_info(paper_id)
             # For each figure in a paper, compute the similarity between the figure caption and paragraphs
             for img_element_idx, texts in summarized_texts.items():
-                summarized_texts_list = list(texts.values())
-                embeddings = model.encode(summarized_texts_list, convert_to_tensor=True)
+                if not texts:
+                    continue
+                
+                # Remove empty or whitespace-only strings from summarized_texts_list
+                # and the corresponding elements from paragraph_ids_list
+                filtered_paragraph_ids_list = []
+                filtered_summarized_texts_list = []
+
+                for pid, text in texts.items():
+                    if text and text.strip():
+                        filtered_paragraph_ids_list.append(pid)
+                        filtered_summarized_texts_list.append(text)
+                
+                if not filtered_summarized_texts_list:
+                    continue
+
+                embeddings = model.encode(filtered_summarized_texts_list, convert_to_tensor=True)
                 caption = fig_info[img_element_idx]['caption'].iloc[0]
                 caption_embedding = model.encode([caption], convert_to_tensor=True)
                 
                 # Compute cosine similarity scores and find the best matching paragraph
                 cosine_scores = util.pytorch_cos_sim(caption_embedding, embeddings)[0]
                 best_index = cosine_scores.argmax()
-                best_paragraph_id = list(texts.keys())[best_index]
+                best_paragraph_id = filtered_paragraph_ids_list[best_index]
                 
                 # Update the figure information with the ID of the best matching paragraph
-                search.figure_info.loc[(search.figure_info['img_element_idx'] == img_element_idx) & (search.figure_info['id'] == pid), 'text_similarity_paragraph_id'] = best_paragraph_id
-                
-        # Ensure the 'text_similarity_paragraph_id' column is of integer type
-        search.figure_info['text_similarity_paragraph_id'] = search.figure_info['text_similarity_paragraph_id'].astype('Int64')
+                search.figure_info.loc[(search.figure_info['img_element_idx'] == img_element_idx) & (search.figure_info['id'] == paper_id), column_name] = best_paragraph_id
+
+        # Ensure the dynamically named column is of integer type
+        search.figure_info[column_name] = search.figure_info[column_name].astype('Int64')  
         return search.figure_info
 
 class ImgSearchStrategy(SearchStrategy):
-    def execute(self, search: SimSearch):
+    def execute(self, search: SimSearch, method: str = 'keyword'):
         """
         Executes an image-based search strategy.
 
@@ -215,23 +254,44 @@ class ImgSearchStrategy(SearchStrategy):
 
         Args:
         search (SimSearch): The SimSearch instance containing the data for execution.
+        method (str): The method used for similarity search.
         """
         # Initialize the CLIP processor and model
         processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
         model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
         
+        # Define the column name based on the method
+        column_name = f'img_similarity_{method}_paragraph_id'
+        
         # Iterate through each paper and its corresponding JSON file
-        for paper_id, json_file in zip(search.paper_id, search.json_file_path):
-            summarized_texts, fig_info = search.get_summarized_texts_and_fig_info(paper_id, json_file)
-            
+        for paper_id, json_file in tqdm(zip(search.paper_id, search.json_file_path), total=len(search.paper_id)):
+            summarized_texts, fig_info = search.get_summarized_texts_and_fig_info(paper_id)
             # For each figure in a paper, compute the relevance between the figure image and paragraphs
             for img_element_idx, texts in summarized_texts.items():
+                if not texts:
+                    continue
+                
                 img_path = fig_info[img_element_idx]['image_path'].iloc[0]
                 image = Image.open(img_path)
                 
                 paragraph_ids_list = list(texts.keys())
                 summarized_texts_list = list(texts.values())
-                inputs = processor(text=summarized_texts_list, images=image, return_tensors='pt', padding=True)
+
+                # Remove empty or whitespace-only strings from summarized_texts_list
+                # and the corresponding elements from paragraph_ids_list
+                filtered_paragraph_ids_list = []
+                filtered_summarized_texts_list = []
+
+                for pid, text in zip(paragraph_ids_list, summarized_texts_list):
+                    if text and text.strip():
+                        filtered_paragraph_ids_list.append(pid)
+                        filtered_summarized_texts_list.append(text)
+
+                # Replace the original lists with the filtered lists
+                paragraph_ids_list = filtered_paragraph_ids_list
+                summarized_texts_list = filtered_summarized_texts_list
+                
+                inputs = processor(text=summarized_texts_list, images=image, return_tensors='pt', padding=True, truncation=True)
                 outputs = model(**inputs)
                 
                 # Compute probabilities and find the best matching paragraph
@@ -241,10 +301,10 @@ class ImgSearchStrategy(SearchStrategy):
                 best_paragraph_id = paragraph_ids_list[best_index]
                 
                 # Update the figure information with the ID of the best matching paragraph
-                search.figure_info.loc[(search.figure_info['img_element_idx'] == img_element_idx) & (search.figure_info['id'] == paper_id), 'img_similarity_paragraph_id'] = best_paragraph_id
+                search.figure_info.loc[(search.figure_info['img_element_idx'] == img_element_idx) & (search.figure_info['id'] == paper_id), column_name] = best_paragraph_id
                 
-        # Ensure the 'img_similarity_paragraph_id' column is of integer type
-        search.figure_info['img_similarity_paragraph_id'] = search.figure_info['img_similarity_paragraph_id'].astype('Int64')  
+        # Ensure the dynamically named column is of integer type
+        search.figure_info[column_name] = search.figure_info[column_name].astype('Int64')  
         return search.figure_info
 
 class Search(SimSearch):
@@ -271,6 +331,10 @@ class Search(SimSearch):
         self.strategy.execute(self)
         return self.save_csv()
 
-strategy = ImgSearchStrategy()
-search = Search(strategy = strategy, mode='AI_VIT_O')
+strategy = TextSearchStrategy()
+search = Search(strategy = strategy, mode='AI_VIT_X')
+# search = Search(strategy = strategy, mode='by_id', paper_id='6298b6a2-0f92-11ef-8230-426932df3dcf')
 result_dict = search.execute()
+
+
+# 329d9d94-0f94-11ef-8828-426932df3dcf
