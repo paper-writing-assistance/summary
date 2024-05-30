@@ -175,10 +175,8 @@ class SummaryGenerator(Config):
 
         if not paragraph_ids:
             paragraph_ids = [pid for pid in related_paragraphs.values() if pid]
-
         if len(paragraph_ids) > 2:
             return self.find_top_2_paragraphs(paragraph_ids)
-
         return paragraph_ids if paragraph_ids else None
 
     def get_paragraph_text(self, paper_id: str, paragraph_ids: List[int]) -> List[str]:
@@ -189,7 +187,6 @@ class SummaryGenerator(Config):
         with open(self.metadata[self.metadata['id'] == paper_id]['json_file_path'].iloc[0]) as f:
             json_data = json.load(f)
             for paragraph in json_data['elements']:
-                # if paragraph_ids is None, return None
                 if not paragraph_ids:
                     return None
                 if paragraph['id'] in paragraph_ids:
@@ -207,15 +204,10 @@ class SummaryGenerator(Config):
                 json_data = json.load(f)
 
             for img_element_idx in self.similar_paragraphs[pid]:
-
                 candidate_paragraphs = self.get_candidate_paragraphs(pid, img_element_idx)
-
                 chosen_paragraphs = self.choose_paragraph(candidate_paragraphs)
-
                 paragraph_text = self.get_paragraph_text(pid, chosen_paragraphs)
-
                 self.similar_paragraphs[pid][img_element_idx] = paragraph_text
-
         self.is_candidate = False
         
 
@@ -237,11 +229,9 @@ class SummaryGenerator(Config):
                 max_tokens=400,
                 temperature=0.5
             )
-
             return response.choices[0].message.content
         except Exception as e:
             print(f"An error occurred: {e}")
-
             return None
 
     def execute_final(self):
@@ -256,10 +246,8 @@ class SummaryGenerator(Config):
                     paragraph_text = paragraph_text[0] + '\n' + paragraph_text[1]
                 else:
                     paragraph_text = paragraph_text[0]
-                
                 self.generate_template = GenerationTemplate(Template())
                 filled_prompt = self.generate_template.fill(title, caption, paragraph_text)
-
                 response = self.gpt_api(self.generate_template.template.system, filled_prompt)
                 self.figure_info.loc[(self.figure_info['id'] == paper_id) & (self.figure_info['img_element_idx'] == img_element_idx), 'gpt_summary'] = response
         self.save_csv()
