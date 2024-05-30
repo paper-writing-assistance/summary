@@ -1,9 +1,10 @@
-from typing import Optional
+from typing import Optional, List, Tuple
 import json
 import os
 import sys
 from PIL import Image
 from tqdm import tqdm
+
 import pandas as pd
 import numpy as np
 import torch
@@ -50,26 +51,20 @@ class SimSearch(Config):
         figure_info = self.get_figure_info()
         return metadata, figure_info
 
-    def prepare_file_paths(self, mode, paper_id):
+    def prepare_file_paths(self, mode: str, paper_id: Optional[str]) -> Tuple[List[str], List[str]]:
         """
         Prepares file paths based on the operating mode.
-
-        Args:
-        mode (str): Operation mode.
-        paper_id (Optional[str]): Paper ID for 'by_id' mode.
-
-        Returns:
-        Tuple[List[str], List[str]]: A tuple containing lists of paper IDs and JSON file paths.
         """
         if self.is_batch:
             self.validate_mode(mode)
-            json_file_path = self.get_json_files(mode)
-            paper_id = [self.metadata[self.metadata['json_file_path'] == path]['id'].iloc[0] for path in json_file_path]
+            json_file_paths = [os.path.join(self.json_dir, file) for file in os.listdir(self.json_dir) if file.endswith('.json')]
+            paper_ids = [self.get_paper_id_from_path(path) for path in json_file_paths]
         else:
             self.validate_paper_id(paper_id)
-            json_file_path = list(self.metadata[self.metadata['id'] == paper_id]['json_file_path'])
-            paper_id = [paper_id]
-        return paper_id, json_file_path
+            json_file_paths = list(self.metadata[self.metadata['id'] == paper_id]['json_file_path'])
+            paper_ids = [paper_id]
+        return paper_ids, json_file_paths
+
 
     def validate_mode(self, mode):
         """

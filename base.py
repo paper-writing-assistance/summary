@@ -3,7 +3,7 @@ import json
 import pandas as pd
 
 # Constants for valid JSON and CSV file types
-_JSON = ['AI_VIT_O', 'AI_VIT_X', 'test']
+_JSON = ['AI_VIT_O', 'AI_VIT_X', 'by_id']
 _CSV = ['figure_info_hand.csv', 'table_info_hand.csv', 'metadata.csv']
 
 class Config:
@@ -76,7 +76,7 @@ class Config:
         Returns:
         - DataFrame containing the data from figure_info.csv.
         """
-        figure_info = self.get_csv_files('figure_info_hand.csv')
+        figure_info = self.get_csv_files('table_info_hand.csv')
         df = pd.read_csv(figure_info)
         return df
     
