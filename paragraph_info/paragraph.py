@@ -8,7 +8,6 @@ from transformers import pipeline, T5Tokenizer, T5ForConditionalGeneration
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
-
 from base import Config, _JSON
 
 # Initialize the summarizer once, outside of the function, to improve efficiency
@@ -111,7 +110,7 @@ class ParagraphInfo(Config):
             outputs = model.generate(input_ids, max_length=70, early_stopping=True)
             keywords = tokenizer.decode(outputs[0], skip_special_tokens=True)
             # iterate through keywords, make it lower case and remove if redundant
-            keywords = list(set([keyword.lower().strip().strip(',') for keyword in keywords.split()]))
+            keywords = [keyword.lower().strip().strip(',') for keyword in keywords.split()]
             # if the element string in the list has length of 1, remove it
             keywords = [keyword for keyword in keywords if len(keyword) > 1]
             # remove if there is the same word with different capitalization
@@ -153,13 +152,11 @@ class ParagraphInfo(Config):
             raise ValueError("Invalid method. Choose 'summary' as the method.")
         
         text_dict = self.iterate_elements()
-
         
         for paper_id, dict in text_dict.items():
 
             summarized_text = self.make_summary(dict)
             text_dict[paper_id] = summarized_text
-
         
         return text_dict
     
@@ -224,7 +221,6 @@ class ParagraphInfo(Config):
         print(f"CSV files saved successfully in {self.save_dir}")
 
 
-        
     def run(self):
         '''
         Runs the paragraph information extraction process.

@@ -10,7 +10,7 @@ class Config:
     """
     Configuration class for handling file paths and loading data from JSON and CSV files.
     """
-    def __init__(self, json_dir:str = '../upstage/json', csv_dir:str='./upstage/csv'):
+    def __init__(self, json_dir:str = '../upstage/json', csv_dir:str='./upstage/csv', is_figure:bool=True):
         """
         Initializes the configuration with directories for JSON and CSV files.
         
@@ -20,6 +20,7 @@ class Config:
         """
         self.json_dir = json_dir
         self.csv_dir = csv_dir
+        self.is_figure = is_figure      # Determine if the search is for figures or tables
     
     def open_json(self, file:str):
         """
@@ -76,7 +77,11 @@ class Config:
         Returns:
         - DataFrame containing the data from figure_info.csv.
         """
-        figure_info = self.get_csv_files('table_info_hand.csv')
+        if self.is_figure:
+            figure_info = self.get_csv_files('figure_info_hand.csv')
+        else:
+            figure_info = self.get_csv_files('table_info_hand.csv')
+            
         df = pd.read_csv(figure_info)
         return df
     

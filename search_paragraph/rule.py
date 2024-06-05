@@ -33,11 +33,10 @@ class RuleSearch(Config):
         - ValueError: If mode is 'by_id' but no paper_id is provided.
         - ValueError: If an invalid mode is provided.
         """
-        super().__init__(json_dir, csv_dir)
+        super().__init__(json_dir, csv_dir, is_figure)
         self.mode = mode
         self.metadata = self.get_metadata()  # Load metadata
         self.figure_info = self.get_figure_info()  # Load figure information
-        self.is_figure = is_figure  # Determine if the search is for figures or tables
         
         self.is_batch = mode != 'by_id'  # Determine if the search is in batch mode
 
@@ -166,7 +165,14 @@ class RuleSearch(Config):
             img_element_idx = self.figure_info.loc[self.figure_info['id'] == paper_id, 'img_element_idx'].reset_index(drop=True)
             caption_texts = self.figure_info.loc[self.figure_info['id'] == paper_id, 'caption']
             # Extract the figure numbers from the caption texts
-            figure_numbers = [self.get_table_number(caption) for caption in caption_texts]
+            # Determine which function to use for extracting numbers based on self.is_figure
+            if self.is_figure:
+                extract_number_func = self.get_figure_number
+            else:
+                extract_number_func = self.get_table_number
+
+            # Extract the figure or table numbers from the caption texts
+            figure_numbers = [extract_number_func(caption) for caption in caption_texts]
             
             # Search for paragraphs referencing each figure number
             for idx, fig_num in enumerate(figure_numbers):
